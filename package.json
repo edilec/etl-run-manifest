@@ -1,0 +1,17 @@
+{
+  "name": "etl-run-manifest",
+  "version": "0.0.0",
+  "description": "Record source files, transforms, versions and outputs for each ETL run.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edilec/etl-run-manifest"
+  }
+}
