@@ -1,0 +1,71 @@
+{
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "8e31395227938975edc180d0b0b81c5c6c0ccaf1974ee84af0af43fbcde11a03"
+  },
+  "run": {
+    "inputs": [
+      {
+        "bytes": 143,
+        "digest": "140eb83b69c73f24561c20a4100c4cc832f14836f4326cd15da5644e57489bae",
+        "id": "customers_raw",
+        "path": "data/customers.csv",
+        "unresolved": null
+      },
+      {
+        "bytes": null,
+        "digest": null,
+        "id": "orders_raw",
+        "path": "data/orders.csv",
+        "unresolved": "not-found"
+      }
+    ],
+    "outputs": [
+      {
+        "bytes": 159,
+        "digest": "05559e6fcec636da464e439a612b425127237779c8984c07be53b6a714c6ff19",
+        "id": "orders",
+        "path": "out/orders.tsv",
+        "unresolved": null
+      }
+    ],
+    "parameters": [
+      {
+        "name": "batch_size",
+        "value": 500
+      },
+      {
+        "name": "currency",
+        "value": "EUR"
+      },
+      {
+        "name": "drop_cancelled",
+        "value": true
+      }
+    ],
+    "parentRunIds": [],
+    "recordedAt": "2026-09-16T02:10:12Z",
+    "runId": "orders-nightly-2026-09-16",
+    "secretRefs": [
+      {
+        "name": "WAREHOUSE_READER",
+        "source": "env"
+      }
+    ],
+    "seed": 20260916,
+    "transformation": {
+      "code": [
+        {
+          "bytes": 338,
+          "digest": "b8df502f16110ac7f70caae7f94fec8994eab0b36087ebfc757f065b31b85123",
+          "path": "sql/normalise.sql",
+          "unresolved": null
+        }
+      ],
+      "id": "orders-normalise",
+      "version": "3.2.0"
+    }
+  },
+  "schema": "edilec.etl-manifest/v1",
+  "tool": "etl-run-manifest"
+}

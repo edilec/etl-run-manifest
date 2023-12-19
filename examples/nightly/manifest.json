@@ -1,0 +1,73 @@
+{
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "a722c0cf5538aa8ee0d32d16d36098cd36fbebaf39368f4cee277eb0fc209a47"
+  },
+  "run": {
+    "inputs": [
+      {
+        "bytes": 143,
+        "digest": "140eb83b69c73f24561c20a4100c4cc832f14836f4326cd15da5644e57489bae",
+        "id": "customers_raw",
+        "path": "data/customers.csv",
+        "unresolved": null
+      },
+      {
+        "bytes": 240,
+        "digest": "1a46333c5df324bfe00fce071ca43b4f4d5b667827153e9618815cec6eb6ee33",
+        "id": "orders_raw",
+        "path": "data/orders.csv",
+        "unresolved": null
+      }
+    ],
+    "outputs": [
+      {
+        "bytes": 159,
+        "digest": "05559e6fcec636da464e439a612b425127237779c8984c07be53b6a714c6ff19",
+        "id": "orders",
+        "path": "out/orders.tsv",
+        "unresolved": null
+      }
+    ],
+    "parameters": [
+      {
+        "name": "batch_size",
+        "value": 500
+      },
+      {
+        "name": "currency",
+        "value": "EUR"
+      },
+      {
+        "name": "drop_cancelled",
+        "value": true
+      }
+    ],
+    "parentRunIds": [
+      "orders-extract-2026-09-18"
+    ],
+    "recordedAt": "2026-09-18T02:14:03Z",
+    "runId": "orders-nightly-2026-09-18",
+    "secretRefs": [
+      {
+        "name": "WAREHOUSE_READER",
+        "source": "env"
+      }
+    ],
+    "seed": 20260918,
+    "transformation": {
+      "code": [
+        {
+          "bytes": 338,
+          "digest": "b8df502f16110ac7f70caae7f94fec8994eab0b36087ebfc757f065b31b85123",
+          "path": "sql/normalise.sql",
+          "unresolved": null
+        }
+      ],
+      "id": "orders-normalise",
+      "version": "3.2.0"
+    }
+  },
+  "schema": "edilec.etl-manifest/v1",
+  "tool": "etl-run-manifest"
+}

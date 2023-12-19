@@ -1,0 +1,5 @@
+order_ref,customer_ref,product_code,quantity,amount_cents,status
+ORD-100001,CUS-0041,PRD-AX9,2,4980,shipped
+ORD-100002,CUS-0117,PRD-BQ2,1,1250,shipped
+ORD-100003,CUS-0041,PRD-CZ7,5,19950,cancelled
+ORD-100004,CUS-0208,PRD-AX9,1,2490,shipped

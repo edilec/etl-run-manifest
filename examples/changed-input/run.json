@@ -1,0 +1,54 @@
+{
+  "schema": "edilec.etl-run/v1",
+  "runId": "orders-nightly-2026-09-17",
+  "recordedAt": "2026-09-17T02:11:58Z",
+  "parentRunIds": [
+    "orders-extract-2026-09-17"
+  ],
+  "transformation": {
+    "id": "orders-normalise",
+    "version": "3.2.0",
+    "code": [
+      {
+        "path": "sql/normalise.sql"
+      }
+    ]
+  },
+  "seed": 20260918,
+  "parameters": [
+    {
+      "name": "batch_size",
+      "value": 500
+    },
+    {
+      "name": "currency",
+      "value": "EUR"
+    },
+    {
+      "name": "drop_cancelled",
+      "value": true
+    }
+  ],
+  "secretRefs": [
+    {
+      "name": "WAREHOUSE_READER",
+      "source": "env"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "customers_raw",
+      "path": "data/customers.csv"
+    },
+    {
+      "id": "orders_raw",
+      "path": "data/orders.csv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "orders",
+      "path": "out/orders.tsv"
+    }
+  ]
+}

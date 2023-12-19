@@ -1,0 +1,4 @@
+order_ref	customer_ref	region	quantity	amount_cents
+ORD-100002	CUS-0117	eu-north	1	1250
+ORD-100001	CUS-0041	eu-west	2	4980
+ORD-100004	CUS-0208	eu-south	1	2490
