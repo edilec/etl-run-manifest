@@ -78,6 +78,24 @@ test('manifest entries are recorded in code-unit order, whatever order they were
   assert.deepEqual(manifest.run.inputs.map((entry) => entry.id), ['Z', 'a-b', 'a_b'])
 })
 
+test('parameters, secret references and parent run ids are recorded in code-unit order', (t) => {
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory, runDescription({
+    parameters: NAMES.map((name, index) => ({ name, value: index })),
+    secretRefs: NAMES.map((name) => ({ name, source: 'env' })),
+    parentRunIds: [...NAMES],
+  }))
+  const recorded = record(directory)
+  assert.equal(recorded.status, 0)
+  const manifest = JSON.parse(readFileSync(recorded.manifestPath, 'utf8'))
+  const expected = [...NAMES].sort()
+  assert.deepEqual(manifest.run.parameters.map((entry) => entry.name), expected)
+  assert.deepEqual(manifest.run.secretRefs.map((entry) => entry.name), expected)
+  assert.deepEqual(manifest.run.parentRunIds, expected)
+  assert.notDeepEqual(expected, [...NAMES].sort((left, right) => left.localeCompare(right)))
+})
+
 test('byCodeUnit itself disagrees with a collator on exactly these values', () => {
   assert.equal(byCodeUnit('Z', 'a'), -1)
   assert.equal(byCodeUnit('a-b', 'a_b'), -1)

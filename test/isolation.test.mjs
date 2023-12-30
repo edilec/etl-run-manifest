@@ -71,10 +71,15 @@ test('verify and compare write nothing at all', (t) => {
   tree(directory)
   writeRun(directory)
   const recorded = record(directory)
-  const snapshot = () => readdirSync(directory).sort().map((name) => {
-    const info = statSync(join(directory, name))
-    return `${name}:${info.size}:${info.mtimeMs}`
-  })
+  const walk = (base, prefix = '') => readdirSync(base, { withFileTypes: true })
+    .sort((left, right) => (left.name < right.name ? -1 : 1))
+    .flatMap((entry) => {
+      const path = join(base, entry.name)
+      if (entry.isDirectory()) return walk(path, `${prefix}${entry.name}/`)
+      const info = statSync(path)
+      return [`${prefix}${entry.name}:${info.size}:${info.mtimeMs}`]
+    })
+  const snapshot = () => walk(directory)
   const before = snapshot()
   runCli(['verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet'])
   runCli(['compare', '--baseline', recorded.manifestPath, '--candidate', recorded.manifestPath, '--quiet'])

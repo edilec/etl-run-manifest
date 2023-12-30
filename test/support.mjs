@@ -69,10 +69,11 @@ export function writeRun(directory, description = runDescription(), name = 'run.
 }
 
 /** Record a manifest and return its path. Asserts nothing: callers do that. */
-export function record(directory, { runName = 'run.json', out = 'manifest.json', args = [] } = {}) {
+export function record(directory, { runName = 'run.json', out = 'manifest.json', args = [], env = {} } = {}) {
   const outPath = join(directory, out)
-  const result = runJson([
-    'record', '--root', directory, '--run', join(directory, runName), '--out', outPath, '--quiet', ...args,
-  ])
+  const result = runJson(
+    ['record', '--root', directory, '--run', join(directory, runName), '--out', outPath, '--quiet', ...args],
+    { env },
+  )
   return { ...result, manifestPath: outPath }
 }

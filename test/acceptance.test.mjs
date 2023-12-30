@@ -179,19 +179,32 @@ test('ACCEPTANCE: a credential is recorded by name and source only, and the envi
   const directory = temporary(t)
   tree(directory)
   writeRun(directory)
-  const recorded = record(directory, { args: [] })
-  assert.equal(recorded.status, 0)
 
-  const manifest = JSON.parse(readFileSync(recorded.manifestPath, 'utf8'))
-  // What IS there.
+  // The run description says the run used the credential in WAREHOUSE_READER.
+  // A variable of exactly that name is set for the child process, holding an
+  // obviously invented value. The tool reads no environment, so it is not
+  // consulted, and there is nothing for it to record.
+  const withValue = record(directory, { env: { WAREHOUSE_READER: 'not-a-real-secret-7777' } })
+  assert.equal(withValue.status, 0)
+  const manifestText = readFileSync(withValue.manifestPath, 'utf8')
+
+  // What IS there, beside what is not.
+  const manifest = JSON.parse(manifestText)
   assert.deepEqual(manifest.run.secretRefs, [{ name: 'WAREHOUSE_READER', source: 'env' }])
   assert.deepEqual(Object.keys(manifest.run.secretRefs[0]).sort(), ['name', 'source'])
-  // The tool never reads the environment, so a variable of that exact name is
-  // not consulted and cannot reach the manifest.
-  const withEnv = record(directory, { out: 'manifest-2.json', args: [] })
-  assert.equal(withEnv.status, 0)
-  const second = readFileSync(withEnv.manifestPath, 'utf8')
-  assert.equal(second, readFileSync(recorded.manifestPath, 'utf8'))
+  assert.equal(manifest.run.runId, 'run-1')
+  assert.ok(!manifestText.includes('not-a-real-secret-7777'))
+  assert.ok(!withValue.stdout.includes('not-a-real-secret-7777'))
+  assert.ok(!withValue.stderr.includes('not-a-real-secret-7777'))
+
+  // And the value makes no difference at all: the same run with a different
+  // value in that variable records byte-identical bytes.
+  const withOther = record(directory, {
+    out: 'manifest-2.json',
+    env: { WAREHOUSE_READER: 'not-a-real-secret-8888' },
+  })
+  assert.equal(withOther.status, 0)
+  assert.equal(readFileSync(withOther.manifestPath, 'utf8'), manifestText)
 })
 
 test('a parameter value that is an object is refused, and is never stringified on the way to the message', (t) => {
