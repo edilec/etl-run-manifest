@@ -244,6 +244,26 @@ test('a manifest is written for an unreadable file, marked, and the run still ex
   assert.equal(refunds.unresolved, 'not-found')
 })
 
+test('a manifest that fails its own integrity digest yields no comparison verdict', (t) => {
+  const { a, b } = twoRuns(t)
+  const tampered = JSON.parse(readFileSync(a.manifestPath, 'utf8'))
+  tampered.run.seed = 99
+  writeFileSync(a.manifestPath, `${JSON.stringify(tampered, null, 2)}\n`, 'utf8')
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 1)
+  assert.equal(compared.report.status, 'fail')
+  assert.ok(ruleIds(compared.report).includes('manifest-integrity-mismatch'))
+  assert.ok(
+    !ruleIds(compared.report).includes('runs-reproduced'),
+    'a manifest somebody edited is not evidence that two runs reproduced each other',
+  )
+  assert.ok(!ruleIds(compared.report).includes('output-nondeterministic'))
+  // The seed difference the edit introduced is still reported, so the reader
+  // can see what changed as well as that the evidence is untrustworthy.
+  assert.ok(ruleIds(compared.report).includes('seed-differs'))
+})
+
 test('FLAGSHIP: two absent digests are not a match, on either side of the comparison', (t) => {
   const directory = temporary(t)
   const a = join(directory, 'a')
