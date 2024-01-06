@@ -9,8 +9,9 @@
  *
  * An entry the manifest recorded WITHOUT a digest is not verified and is not
  * quietly skipped either. It is reported, and it makes the whole verification
- * incomplete: a manifest half of whose entries were never hashed has not
- * verified anything, and saying so is the only honest answer.
+ * incomplete: the entries that do have digests are still checked and counted,
+ * but a manifest holding an entry that was never hashed has not been verified,
+ * whatever the rest of it says.
  */
 
 import { hashFile } from './files.mjs'
