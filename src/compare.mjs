@@ -33,6 +33,15 @@ import { byCodeUnit } from './text.mjs'
 export const BASELINE_LABEL = '(baseline)'
 export const CANDIDATE_LABEL = '(candidate)'
 
+/**
+ * Index one side of a comparison by its key.
+ *
+ * `Map.set` keeps the last entry per key, so this is lossless only because
+ * `compileManifest` refuses a manifest that repeats a dataset id, a code path,
+ * a parameter name or a secret reference name -- both manifests are compiled
+ * before anything here runs. Without that refusal a dropped entry would be
+ * compared on nothing and still counted as agreeing.
+ */
 function keyed(entries, keyOf) {
   const map = new Map()
   for (const entry of entries) map.set(keyOf(entry), entry)

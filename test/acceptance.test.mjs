@@ -11,11 +11,11 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { record, runJson, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
+import { record, reseal, runJson, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
 
 test('THE GOOD CASE: a complete, readable run records and verifies with nothing to report', (t) => {
   const directory = temporary(t)
@@ -291,6 +291,87 @@ test('FLAGSHIP: two absent digests are not a match, on either side of the compar
   // Every other file matched, and the verdict is still withheld.
   assert.ok(!ruleIds(compared.report).includes('runs-reproduced'))
   assert.ok(!ruleIds(compared.report).includes('output-nondeterministic'))
+})
+
+test('FLAGSHIP: a manifest that repeats a key is refused, never compared on one of its entries', (t) => {
+  const { a, b } = twoRuns(t)
+  // A second entry for a code file that could not be read, re-sealed so the
+  // integrity digest is correct: the only thing wrong with this manifest is
+  // that it records two entries under one key.
+  reseal(a.manifestPath, (manifest) => {
+    manifest.run.transformation.code.unshift({ bytes: null, digest: null, path: 'sql/t.sql', unresolved: 'not-found' })
+  })
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 2, 'an entry dropped while indexing makes the comparison incomplete, not clean')
+  assert.equal(compared.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(compared.report), ['manifest-invalid'])
+  assert.equal(compared.report.findings[0].location.pointer, '/run/transformation/code/1')
+  assert.match(compared.report.findings[0].message, /repeats the code path "sql\/t\.sql"/)
+  assert.ok(
+    !ruleIds(compared.report).includes('runs-reproduced'),
+    'the second entry has no digest, so nothing here supports a positive verdict',
+  )
+  // The same manifest is refused by verify, because both commands compile it
+  // through one loader rather than each deciding for itself.
+  const verified = runJson(['verify', '--root', dirname(a.manifestPath), '--manifest', a.manifestPath, '--quiet'])
+  assert.equal(verified.status, 2)
+  assert.deepEqual(ruleIds(verified.report), ['manifest-invalid'])
+})
+
+test('a repeated parameter name cannot hide a parameter divergence behind a reproduced verdict', (t) => {
+  const { a, b } = twoRuns(t)
+  // The baseline records currency=USD AND currency=EUR; the candidate records
+  // only currency=EUR. Indexing by name would keep one of the two and report
+  // the runs as having used the same parameters.
+  reseal(a.manifestPath, (manifest) => {
+    manifest.run.parameters = [{ name: 'currency', value: 'USD' }, { name: 'currency', value: 'EUR' }]
+  })
+  reseal(b.manifestPath, (manifest) => {
+    manifest.run.parameters = [{ name: 'currency', value: 'EUR' }]
+  })
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 2)
+  assert.equal(compared.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(compared.report), ['manifest-invalid'])
+  assert.equal(compared.report.findings[0].location.pointer, '/run/parameters/1')
+  assert.match(compared.report.findings[0].message, /repeats the parameter name "currency"/)
+  assert.ok(!ruleIds(compared.report).includes('runs-reproduced'))
+})
+
+test('a manifest repeating a secret reference name or a parent run id is refused as well', (t) => {
+  // `record` refuses these on the way in, so a manifest carrying one was not
+  // written by this tool. The manifest schema says so rather than reading a
+  // document its own writer could not have produced.
+  const { a, b } = twoRuns(t)
+  reseal(a.manifestPath, (manifest) => {
+    manifest.run.secretRefs = [{ name: 'WAREHOUSE_READER', source: 'env' }, { name: 'WAREHOUSE_READER', source: 'vault' }]
+    manifest.run.parentRunIds = ['extract-1', 'extract-1']
+  })
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 2)
+  assert.equal(compared.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(compared.report), ['manifest-invalid', 'manifest-invalid'])
+  assert.deepEqual(
+    compared.report.findings.map((finding) => finding.location.pointer).sort(),
+    ['/run/parentRunIds/1', '/run/secretRefs/1'],
+  )
+  assert.match(compared.report.findings[0].message, /repeats the parent run id "extract-1"/)
+  assert.match(compared.report.findings[1].message, /repeats the secret reference name "WAREHOUSE_READER"/)
+  assert.ok(!ruleIds(compared.report).includes('runs-reproduced'))
+})
+
+test('two parameters with DIFFERENT names are not a repeat: the legal case stays silent', (t) => {
+  const { a, b } = twoRuns(t)
+  const parameters = [{ name: 'batch_size', value: 500 }, { name: 'currency', value: 'EUR' }]
+  reseal(a.manifestPath, (manifest) => { manifest.run.parameters = parameters })
+  reseal(b.manifestPath, (manifest) => { manifest.run.parameters = parameters })
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 0)
+  assert.deepEqual(ruleIds(compared.report), ['runs-reproduced'])
 })
 
 test('an unresolved input withholds the nondeterminism verdict even when the outputs differ', (t) => {

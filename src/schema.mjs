@@ -331,7 +331,20 @@ function recordedFile(entry, at, problems, limits, keys, withId) {
   return withId ? { id, path, digest, bytes, unresolved } : { path, digest, bytes, unresolved }
 }
 
-/** Validate a parsed manifest document produced by an earlier `record`. */
+/**
+ * Validate a parsed manifest document produced by an earlier `record`.
+ *
+ * Every collection `compare` later indexes by a key -- dataset ids, code paths,
+ * parameter names, secret reference names, parent run ids -- is checked for
+ * duplicates here, and that check is what makes the index lossless. An index
+ * built with `Map.set` keeps the last entry per key and drops the rest
+ * silently, so a manifest recording two entries under one key would have been
+ * compared on one of them and reported as agreeing about both. Evidence dropped
+ * while building an index makes the comparison incomplete; it does not make it
+ * clean. The same lists are checked on the way in by `compileRunDescription`,
+ * so no manifest this tool writes can fail these, and a manifest that does was
+ * not written by a `record` run.
+ */
 export function compileManifest(document, limits = LIMITS) {
   const problems = new Problems()
   if (!checkKeys(document, MANIFEST_KEYS, MANIFEST_KEYS, '', problems)) {
@@ -369,6 +382,7 @@ export function compileManifest(document, limits = LIMITS) {
     const parentRunIds = parentsRaw === null
       ? []
       : parentsRaw.map((value, index) => cleanString(value, `/run/parentRunIds/${index}`, problems, limits.maxIdentifierChars))
+    uniqueList(parentRunIds, '/run/parentRunIds', problems, 'parent run id')
 
     let transformation = null
     if (checkKeys(document.run.transformation, RECORDED_TRANSFORM_KEYS, RECORDED_TRANSFORM_KEYS, '/run/transformation', problems)) {
@@ -380,6 +394,7 @@ export function compileManifest(document, limits = LIMITS) {
         : codeRaw
           .map((entry, index) => recordedFile(entry, `/run/transformation/code/${index}`, problems, limits, RECORDED_CODE_KEYS, false))
           .filter((entry) => entry !== null)
+      uniqueList(code.map((entry) => entry.path), '/run/transformation/code', problems, 'code path')
       transformation = {
         id: cleanString(document.run.transformation.id, '/run/transformation/id', problems, limits.maxIdentifierChars),
         version: cleanString(document.run.transformation.version, '/run/transformation/version', problems, limits.maxValueChars),
@@ -401,6 +416,7 @@ export function compileManifest(document, limits = LIMITS) {
           value: held === null ? null : held.value,
         }
       })
+    uniqueList(parameters.map((entry) => entry.name), '/run/parameters', problems, 'parameter name')
 
     const secretsRaw = boundedArray(document.run.secretRefs, '/run/secretRefs', problems, limits.maxSecretRefs, 'secret references')
     const secretRefs = secretsRaw === null
@@ -413,6 +429,7 @@ export function compileManifest(document, limits = LIMITS) {
         else problems.add(`${at}/source`, `must be one of ${SECRET_SOURCES.join(', ')}`)
         return { name: cleanString(entry.name, `${at}/name`, problems, limits.maxIdentifierChars), source }
       })
+    uniqueList(secretRefs.map((entry) => entry.name), '/run/secretRefs', problems, 'secret reference name')
 
     const files = (raw, pointer, limit, label) => {
       const list = boundedArray(raw, pointer, problems, limit, label)

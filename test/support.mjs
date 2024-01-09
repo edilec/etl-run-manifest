@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { canonicalDocument, canonicalJson, digestText } from '../src/index.mjs'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const BIN = join(ROOT, 'bin', 'etl-run-manifest.mjs')
@@ -76,4 +78,22 @@ export function record(directory, { runName = 'run.json', out = 'manifest.json',
     { env },
   )
   return { ...result, manifestPath: outPath }
+}
+
+/**
+ * Edit a recorded manifest and re-seal it with a correct integrity digest,
+ * using the tool's own canonical serialiser.
+ *
+ * Without the re-seal every edit is caught by the integrity check, and a test
+ * of some other guard would pass because of that one instead -- the shape the
+ * contract warns about, where an absence holds for a reason the test was not
+ * written to check.
+ */
+export function reseal(manifestPath, mutate) {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  mutate(manifest)
+  const body = { schema: manifest.schema, tool: manifest.tool, run: manifest.run }
+  manifest.integrity = { algorithm: 'sha256', digest: digestText(canonicalJson(body)) }
+  writeFileSync(manifestPath, canonicalDocument(manifest), 'utf8')
+  return manifestPath
 }

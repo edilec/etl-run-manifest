@@ -25,6 +25,11 @@ Renaming a `ruleId` is a breaking change and is recorded here.
 - A destination guard on `--out` covering a symbolic link at the destination and
   a hard link to any file the run resolved. The destination is deliberately not
   confined to `--root`, and the help text and README say so.
+- The manifest schema refuses a repeated dataset id, code path, parameter name,
+  secret reference name or parent run id, matching the run description schema.
+  `compare` indexes by those keys, and an index silently keeps one entry per
+  key, so a repeat would have been compared on one entry and reported as
+  agreeing about both.
 - Declared bounds on document bytes, file bytes, inputs, outputs, code files,
   parameters, secret references, parent run ids, findings, identifier length,
   path length and value length, enforced before the work.

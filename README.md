@@ -142,6 +142,13 @@ it does the opposite instead:
   withheld unless every field they rest on is known on both sides. Outputs that
   differ while an input digest is missing is evidence of nothing, and is never
   reported as nondeterminism.
+- **An entry dropped while indexing is not a clean comparison.** `compare`
+  indexes each manifest by dataset id, code path and parameter name, and an
+  index keeps one entry per key. A manifest that records two entries under one
+  of those keys is refused (`manifest-invalid`, exit `2`) rather than compared
+  on whichever entry the index kept and reported as agreeing about both.
+  `record` refuses the same repeats in the run description, so no manifest this
+  tool writes can reach that refusal.
 - A manifest that does not match its own integrity digest never yields a
   positive verdict either.
 - A run description naming no input, no output and no code file is reported
