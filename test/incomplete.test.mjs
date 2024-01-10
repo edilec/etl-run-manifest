@@ -7,9 +7,14 @@
  * green exit 0. So each case below asserts the exit code, and the
  * warning-severity cases also assert that `errors` is zero -- which is what
  * makes the assertion depend on the flag and nothing else.
+ *
+ * Several rules are reachable from more than one command, and a scenario for
+ * one of them says nothing about the other: `record` and `verify` each decide
+ * separately what to do with a file they could not read. The verify-side
+ * scenarios are at the end of this file.
  */
 
-import { readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -135,4 +140,69 @@ test('every rule in INCOMPLETE_RULES has a scenario above', () => {
     'manifest-invalid', 'manifest-unreadable', 'no-evidence-recorded', 'path-outside-root',
     'run-description-invalid', 'run-description-unreadable',
   ])
+})
+
+/**
+ * The verify side of an entry that has a digest and a file that cannot be
+ * re-hashed.
+ *
+ * `verify` counts the entry as unresolved and reports why. The count alone
+ * suppresses `verification-complete`, so a missing report leaves status "pass",
+ * exit 0 and an EMPTY findings list for a manifest whose recorded input is
+ * gone -- a green run over evidence nobody could obtain. Each case below pins
+ * the rule id as well as the exit code, so the mapping from reason to rule is
+ * pinned too.
+ */
+function verifyUnresolved(t, { orders, args = [], after = () => {}, unresolved = 1 } = {}) {
+  const directory = temporary(t)
+  // The tree sits in a subdirectory so that "outside the root" has somewhere to be.
+  const root = join(directory, 'root')
+  tree(root, orders === undefined ? {} : { orders })
+  writeRun(root)
+  const recorded = record(root)
+  assert.equal(recorded.status, 0, 'the manifest under test must start out complete')
+  after(root, directory)
+  const verified = runJson(['verify', '--root', root, '--manifest', recorded.manifestPath, '--quiet', ...args])
+  assert.ok(
+    !ruleIds(verified.report).includes('verification-complete'),
+    'a file that could not be re-read is not a verification',
+  )
+  assert.equal(verified.report.summary.unresolved, unresolved)
+  assert.equal(verified.report.summary.mismatched, 0)
+  return verified
+}
+
+test('file-unreadable via verify: a recorded input that has vanished', (t) => {
+  const verified = verifyUnresolved(t, { after: (root) => rmSync(join(root, 'data/orders.csv')) })
+  assertIncomplete(verified, 'file-unreadable', { errorsExpected: false })
+  assert.deepEqual(ruleIds(verified.report), ['file-unreadable'])
+  const finding = verified.report.findings[0]
+  assert.equal(finding.location.file, 'data/orders.csv')
+  assert.equal(finding.location.pointer, '/run/inputs/0')
+  assert.match(finding.message, /could not be resolved \(ENOENT\), so the digest the manifest records for it could not be checked/)
+  assert.equal(verified.report.summary.verified, 2, 'the other two files were still checked')
+})
+
+test('file-too-large via verify: a recorded file over the bound is not re-hashed', (t) => {
+  // Only the input is over the bound; the other two files are still verified,
+  // so the report distinguishes "not checked" from "checked and fine".
+  const verified = verifyUnresolved(t, { orders: `a,b\n${'1,2\n'.repeat(10)}`, args: ['--max-file-bytes', '20'] })
+  assertIncomplete(verified, 'file-too-large', { errorsExpected: false })
+  assert.deepEqual(ruleIds(verified.report), ['file-too-large'])
+  assert.match(verified.report.findings[0].message, /is 44 bytes, over the file limit of 20/)
+  assert.equal(verified.report.summary.verified, 2)
+})
+
+test('path-outside-root via verify: a recorded path that now leaves the root', (t) => {
+  const verified = verifyUnresolved(t, {
+    after: (root, directory) => {
+      writeFileSync(join(directory, 'elsewhere.csv'), 'not-in-the-root\n', 'utf8')
+      rmSync(join(root, 'data/orders.csv'))
+      symlinkSync(join(directory, 'elsewhere.csv'), join(root, 'data/orders.csv'))
+    },
+  })
+  assertIncomplete(verified, 'path-outside-root', { errorsExpected: true })
+  assert.deepEqual(ruleIds(verified.report), ['path-outside-root'])
+  assert.match(verified.report.findings[0].message, /resolves outside the declared root/)
+  assert.ok(!verified.stdout.includes('not-in-the-root'), 'out-of-root content is never echoed')
 })
