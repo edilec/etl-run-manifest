@@ -244,7 +244,11 @@ test('a manifest is written for an unreadable file, marked, and the run still ex
   assert.equal(refunds.unresolved, 'not-found')
 })
 
-test('a manifest that fails its own integrity digest yields no comparison verdict', (t) => {
+test('an edited manifest reports the edit AND the integrity mismatch', (t) => {
+  // This edit changes `seed`, which compare reads, so the verdict is withheld
+  // for two independent reasons. What it pins is that both are reported: the
+  // integrity mismatch alone is pinned by the test below, where the edited
+  // field is one compare never looks at.
   const { a, b } = twoRuns(t)
   const tampered = JSON.parse(readFileSync(a.manifestPath, 'utf8'))
   tampered.run.seed = 99
@@ -262,6 +266,30 @@ test('a manifest that fails its own integrity digest yields no comparison verdic
   // The seed difference the edit introduced is still reported, so the reader
   // can see what changed as well as that the evidence is untrustworthy.
   assert.ok(ruleIds(compared.report).includes('seed-differs'))
+})
+
+test('a manifest edited in a field compare never reads still yields no verdict', (t) => {
+  const { a, b } = twoRuns(t)
+  // `recordedAt` is an opaque label that compare does not read: every field the
+  // verdict rests on is equal and known on both sides, and the ONLY thing
+  // withholding `runs-reproduced` is that this manifest no longer matches the
+  // digest it carries. A manifest somebody edited is not evidence, whichever
+  // field they edited.
+  const tampered = JSON.parse(readFileSync(a.manifestPath, 'utf8'))
+  tampered.run.recordedAt = '2026-09-18T03:00:00Z'
+  writeFileSync(a.manifestPath, `${JSON.stringify(tampered, null, 2)}\n`, 'utf8')
+
+  const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
+  assert.equal(compared.status, 1)
+  assert.equal(compared.report.status, 'fail')
+  assert.deepEqual(ruleIds(compared.report), ['manifest-integrity-mismatch'])
+  assert.equal(compared.report.summary.differing, 0, 'nothing compare reads differs between these two manifests')
+  assert.equal(compared.report.summary.unresolved, 0, 'every digest is present on both sides')
+  assert.ok(
+    !ruleIds(compared.report).includes('runs-reproduced'),
+    'a tampered manifest cannot assert that two runs reproduced each other',
+  )
+  assert.ok(!ruleIds(compared.report).includes('output-nondeterministic'))
 })
 
 test('FLAGSHIP: two absent digests are not a match, on either side of the comparison', (t) => {
