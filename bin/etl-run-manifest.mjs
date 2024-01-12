@@ -187,7 +187,18 @@ async function main() {
         root: null,
         label: '--out',
       })
-      await writeFile(target, canonicalDocument(result.manifest), 'utf8')
+      // A destination the guard accepted can still refuse the write: a
+      // read-only file, a read-only directory, a full disk. Left uncaught that
+      // is a Node stack trace on stderr -- absolute host paths included --
+      // empty stdout and exit 1, which in this contract means "the check
+      // completed and the policy failed". A consumer would read a write failure
+      // as a digest mismatch. An unusable destination is the configuration
+      // shape: empty stdout, a message, exit 2.
+      try {
+        await writeFile(target, canonicalDocument(result.manifest), 'utf8')
+      } catch (error) {
+        throw new DestinationError(`--out could not be written (${error.code ?? 'unknown error'})`)
+      }
     }
     process.stdout.write(serializeReport(result.report))
     if (!quiet) {

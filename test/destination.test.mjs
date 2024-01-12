@@ -17,12 +17,13 @@
  * confinement the code does not perform is worse than silence.
  */
 
-import { existsSync, linkSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import process from 'node:process'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { record, runCli, temporary, tree, writeRun } from './support.mjs'
+import { ROOT, record, runCli, temporary, tree, writeRun } from './support.mjs'
 
 function prepared(t) {
   const directory = temporary(t)
@@ -168,4 +169,48 @@ test('recording twice over the same destination is a normal, allowed operation',
   assert.equal(second.status, 0)
   assert.equal(readFileSync(second.manifestPath, 'utf8'), before, 'the same run records the same bytes')
   assert.equal(statSync(second.manifestPath).isFile(), true)
+})
+
+/**
+ * A destination the guard accepted, that the write then refuses.
+ *
+ * The guard answers "is this the file you meant"; it cannot answer "will the
+ * kernel let you write it". Left uncaught the write failure is a Node stack
+ * trace carrying absolute host paths, empty stdout and exit 1 -- which this
+ * contract reads as "the check completed and the policy failed", so a consumer
+ * would take a permission error for a digest mismatch.
+ *
+ * Root can write through any mode bit, so these two cases cannot be constructed
+ * as root and say so rather than passing vacuously.
+ */
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0
+
+test('a destination that exists but cannot be written is exit 2, not a stack trace', (t) => {
+  if (asRoot) return t.skip('mode bits do not refuse root')
+  const { directory, root } = prepared(t)
+  const out = join(directory, 'manifest.json')
+  writeFileSync(out, 'an older manifest\n', 'utf8')
+  chmodSync(out, 0o444)
+
+  const result = attemptWrite(root, out)
+  assert.equal(result.status, 2, 'an unusable destination is the configuration shape, never exit 1')
+  assert.equal(result.stdout, '', 'a consumer piping stdout must not receive a report for a run that wrote nothing')
+  assert.equal(result.stderr, 'etl-run-manifest: --out could not be written (EACCES)\n')
+  assert.ok(!result.stderr.includes('at async'), 'no stack trace')
+  assert.ok(!result.stderr.includes(ROOT), 'the absolute path of the tool itself never reaches stderr')
+  assert.equal(readFileSync(out, 'utf8'), 'an older manifest\n', 'the destination is left as it was')
+})
+
+test('a destination in a directory that cannot be written is exit 2 as well', (t) => {
+  if (asRoot) return t.skip('mode bits do not refuse root')
+  const { directory, root } = prepared(t)
+  const locked = join(directory, 'locked')
+  mkdirSync(locked)
+  chmodSync(locked, 0o555)
+
+  const result = attemptWrite(root, join(locked, 'manifest.json'))
+  assert.equal(result.status, 2)
+  assert.equal(result.stdout, '')
+  assert.match(result.stderr, /^etl-run-manifest: --out could not be written \(EACCES\)\n$/)
+  assert.equal(existsSync(join(locked, 'manifest.json')), false)
 })
