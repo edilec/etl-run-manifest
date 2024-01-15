@@ -73,18 +73,27 @@ function compareGroup({ baseline, candidate, keyOf, ruleId, kind, pointerBase, r
       continue
     }
     // Absence is checked BEFORE equality. Two missing digests are not a match.
+    //
+    // The message says which side is missing what. An earlier wording said the
+    // side WITHOUT a digest "recorded a digest for" the entry, which sent the
+    // reader to inspect the wrong manifest -- a report that contradicts the
+    // thing it is reporting. The reason is always available: the schema refuses
+    // a recorded entry that has neither a digest nor a reason for not having
+    // one.
     if (a.digest === null || b.digest === null) {
       group.known = false
       counts.unresolved += 1
-      const which = a.digest === null && b.digest === null
-        ? 'neither manifest'
-        : a.digest === null ? 'the baseline' : 'the candidate'
+      const bothAbsent = a.digest === null && b.digest === null
       report.add('evidence-unresolved', {
         file: a.digest === null ? BASELINE_LABEL : CANDIDATE_LABEL,
         pointer,
-        message:
-          `${which} recorded a digest for the ${kind} "${key}", so this pair cannot be compared; `
-          + 'two absent digests are not a match',
+        message: bothAbsent
+          ? `neither manifest recorded a digest for the ${kind} "${key}" `
+            + `(baseline: ${a.unresolved}; candidate: ${b.unresolved}), so this pair cannot be compared; `
+            + 'two absent digests are not a match'
+          : `${a.digest === null ? 'the baseline' : 'the candidate'} recorded no digest for the ${kind} "${key}" `
+            + `(${a.digest === null ? a.unresolved : b.unresolved}), so this pair cannot be compared; `
+            + 'the digest the other manifest holds has nothing to check against',
         suggestion: 'record both runs again once every file they name can be read',
       })
       continue

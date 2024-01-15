@@ -314,7 +314,11 @@ test('FLAGSHIP: two absent digests are not a match, on either side of the compar
   assert.equal(compared.report.status, 'incomplete')
   assert.deepEqual(ruleIds(compared.report), ['evidence-unresolved'])
   assert.equal(compared.report.findings[0].location.pointer, '/run/inputs/refunds_raw')
-  assert.match(compared.report.findings[0].message, /two absent digests are not a match/)
+  assert.equal(
+    compared.report.findings[0].message,
+    'neither manifest recorded a digest for the input "refunds_raw" (baseline: not-found; candidate: not-found), '
+    + 'so this pair cannot be compared; two absent digests are not a match',
+  )
   assert.equal(compared.report.summary.unresolved, 1)
   // Every other file matched, and the verdict is still withheld.
   assert.ok(!ruleIds(compared.report).includes('runs-reproduced'))
@@ -400,6 +404,45 @@ test('two parameters with DIFFERENT names are not a repeat: the legal case stays
   const compared = runJson(['compare', '--baseline', a.manifestPath, '--candidate', b.manifestPath, '--quiet'])
   assert.equal(compared.status, 0)
   assert.deepEqual(ruleIds(compared.report), ['runs-reproduced'])
+})
+
+test('the unresolved message names the side that has NO digest, and why', (t) => {
+  const directory = temporary(t)
+  const a = join(directory, 'a')
+  const b = join(directory, 'b')
+  tree(a)
+  tree(b)
+  // The second input exists under b and not under a, so exactly one side of
+  // the pair has a digest.
+  write(b, 'data/refunds.csv', 'a,b\n1,2\n')
+  const description = (runId) => runDescription({
+    runId,
+    inputs: [{ id: 'orders_raw', path: 'data/orders.csv' }, { id: 'refunds_raw', path: 'data/refunds.csv' }],
+  })
+  writeRun(a, description('run-a'))
+  writeRun(b, description('run-b'))
+  const incomplete = record(a)
+  const complete = record(b)
+  assert.equal(incomplete.status, 2)
+  assert.equal(complete.status, 0)
+
+  // A reader sent to the wrong manifest is worse served than one told nothing:
+  // the finding must name the side that is missing the evidence.
+  const forward = runJson(['compare', '--baseline', incomplete.manifestPath, '--candidate', complete.manifestPath, '--quiet'])
+  assert.equal(forward.status, 2)
+  const first = forward.report.findings.find((finding) => finding.ruleId === 'evidence-unresolved')
+  assert.equal(first.location.file, '(baseline)')
+  assert.equal(
+    first.message,
+    'the baseline recorded no digest for the input "refunds_raw" (not-found), so this pair cannot be compared; '
+    + 'the digest the other manifest holds has nothing to check against',
+  )
+
+  const reverse = runJson(['compare', '--baseline', complete.manifestPath, '--candidate', incomplete.manifestPath, '--quiet'])
+  assert.equal(reverse.status, 2)
+  const second = reverse.report.findings.find((finding) => finding.ruleId === 'evidence-unresolved')
+  assert.equal(second.location.file, '(candidate)')
+  assert.match(second.message, /^the candidate recorded no digest for the input "refunds_raw" \(not-found\)/)
 })
 
 test('an unresolved input withholds the nondeterminism verdict even when the outputs differ', (t) => {
