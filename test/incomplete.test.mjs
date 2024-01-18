@@ -20,7 +20,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { INCOMPLETE_RULES } from '../src/index.mjs'
-import { record, runJson, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
+import { record, reseal, runJson, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
 
 function assertIncomplete(result, ruleId, { errorsExpected }) {
   assert.equal(result.report.status, 'incomplete', `${ruleId} must report incomplete`)
@@ -78,6 +78,50 @@ test('no-evidence-recorded', (t) => {
     outputs: [],
   }))
   assertIncomplete(record(directory), 'no-evidence-recorded', { errorsExpected: true })
+})
+
+/**
+ * An integrity-correct manifest that records nothing at all.
+ *
+ * `record` refuses to build one, but a manifest is a document somebody can hold
+ * on to, and both readers must answer for themselves. `pass` with `checked: 0`
+ * is green on no evidence.
+ */
+function emptyManifest(t) {
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const recorded = record(directory)
+  assert.equal(recorded.status, 0)
+  reseal(recorded.manifestPath, (manifest) => {
+    manifest.run.transformation.code = []
+    manifest.run.inputs = []
+    manifest.run.outputs = []
+  })
+  return { directory, manifestPath: recorded.manifestPath }
+}
+
+test('no-evidence-recorded via verify: a manifest recording nothing is not verified', (t) => {
+  const { directory, manifestPath } = emptyManifest(t)
+  const verified = runJson(['verify', '--root', directory, '--manifest', manifestPath, '--quiet'])
+  assertIncomplete(verified, 'no-evidence-recorded', { errorsExpected: true })
+  assert.deepEqual(ruleIds(verified.report), ['no-evidence-recorded'])
+  assert.equal(verified.report.summary.checked, 0)
+  assert.ok(
+    !ruleIds(verified.report).includes('verification-complete'),
+    'all 0 recorded files hashing correctly is not a verification',
+  )
+})
+
+test('no-evidence-recorded via compare: two manifests recording nothing are not reproduced', (t) => {
+  const { manifestPath } = emptyManifest(t)
+  const compared = runJson(['compare', '--baseline', manifestPath, '--candidate', manifestPath, '--quiet'])
+  assertIncomplete(compared, 'no-evidence-recorded', { errorsExpected: true })
+  assert.deepEqual(ruleIds(compared.report), ['no-evidence-recorded'])
+  assert.ok(
+    !ruleIds(compared.report).includes('runs-reproduced'),
+    'two manifests that record nothing agree about nothing',
+  )
 })
 
 test('finding-limit-reached (warning only: the flag is the whole guard)', (t) => {
