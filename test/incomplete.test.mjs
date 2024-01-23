@@ -8,6 +8,11 @@
  * warning-severity cases also assert that `errors` is zero -- which is what
  * makes the assertion depend on the flag and nothing else.
  *
+ * That argument does not hold for a scenario whose findings mark the report
+ * incomplete through the rule table anyway, whatever their severity: the flag
+ * under test has to be the only difference between exit 2 and some other exit,
+ * and a case is named below where it is.
+ *
  * Several rules are reachable from more than one command, and a scenario for
  * one of them says nothing about the other: `record` and `verify` each decide
  * separately what to do with a file they could not read. The verify-side
@@ -124,13 +129,49 @@ test('no-evidence-recorded via compare: two manifests recording nothing are not 
   )
 })
 
-test('finding-limit-reached (warning only: the flag is the whole guard)', (t) => {
+test('finding-limit-reached over dropped warnings', (t) => {
+  // NOTE: this scenario does NOT depend on the truncation flag. Its four
+  // dropped findings are file-unreadable, which marks the report incomplete
+  // through the rule table on the way in, so the run would be incomplete with
+  // the truncation flag deleted. The test below is the one that depends on it.
   const directory = temporary(t)
   tree(directory)
   writeRun(directory, runDescription({
     inputs: Array.from({ length: 4 }, (unused, index) => ({ id: `in-${index}`, path: `data/gone-${index}.csv` })),
   }))
   assertIncomplete(record(directory, { args: ['--max-findings', '2'] }), 'finding-limit-reached', { errorsExpected: false })
+})
+
+test('finding-limit-reached when every dropped finding is an error: truncation alone is incomplete', (t) => {
+  // Three digests no longer match and the report stops at two. Nothing here
+  // marks the report incomplete through the rule table -- input-digest-mismatch
+  // is a completed check whose policy failed -- so the flag set when findings
+  // are dropped is the ONLY thing between "this report does not describe
+  // everything that was observed" and a plain exit 1, which says the check
+  // completed. A consumer would act on two mismatches and never learn of the
+  // third.
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory, runDescription({
+    inputs: [0, 1, 2].map((index) => ({ id: `in-${index}`, path: `data/part-${index}.csv` })),
+    outputs: [],
+    transformation: { id: 'normalise', version: '1.0.0', code: [] },
+  }))
+  for (const index of [0, 1, 2]) write(directory, `data/part-${index}.csv`, `original ${index}\n`)
+  const recorded = record(directory)
+  assert.equal(recorded.status, 0)
+  for (const index of [0, 1, 2]) write(directory, `data/part-${index}.csv`, `changed ${index}\n`)
+
+  const verified = runJson([
+    'verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet', '--max-findings', '2',
+  ])
+  assert.deepEqual(
+    ruleIds(verified.report).sort(),
+    ['finding-limit-reached', 'input-digest-mismatch', 'input-digest-mismatch'],
+  )
+  assert.equal(verified.report.summary.errors, 2, 'the dropped findings are errors, not incomplete-marking rules')
+  assert.equal(verified.report.summary.mismatched, 3, 'all three were observed; only two were reported')
+  assertIncomplete(verified, 'finding-limit-reached', { errorsExpected: true })
 })
 
 test('manifest-unreadable', (t) => {
