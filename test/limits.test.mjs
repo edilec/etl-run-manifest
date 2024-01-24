@@ -13,13 +13,13 @@
  * file is opened. A legal-sized input cannot exhaust memory here.
  */
 
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { LIMITS, compileRunDescription } from '../src/index.mjs'
-import { record, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
+import { record, runJson, ruleIds, runDescription, temporary, tree, write, writeRun } from './support.mjs'
 
 function at(directory, description, args) {
   writeRun(directory, description)
@@ -32,15 +32,82 @@ test('maxDocumentBytes: a document of exactly the limit is read, one byte over i
   const runPath = writeRun(directory)
   const size = statSync(runPath).size
 
+  // At exactly the limit the run description is READ: every file it names is
+  // hashed and the run gets as far as building the manifest. (The manifest is
+  // larger than the description it came from and the same bound then refuses
+  // it -- that is the test below, and it is a different refusal.)
   const exact = record(directory, { args: ['--max-document-bytes', String(size)] })
-  assert.equal(exact.status, 0, 'a document sitting exactly on the limit is legal')
-  assert.equal(exact.report.status, 'pass')
+  assert.ok(
+    !ruleIds(exact.report).includes('run-description-unreadable'),
+    'a document sitting exactly on the limit is legal',
+  )
+  assert.equal(exact.report.summary.checked, 3, 'the description was read, and everything it named was hashed')
 
   const over = record(directory, { out: 'm2.json', args: ['--max-document-bytes', String(size - 1)] })
   assert.equal(over.status, 2)
   assert.equal(over.report.status, 'incomplete')
   assert.deepEqual(ruleIds(over.report), ['run-description-unreadable'])
   assert.match(over.report.findings[0].message, new RegExp(`over the document limit of ${size - 1}`))
+  assert.equal(over.report.summary.checked, 0, 'nothing was hashed for a description that was never read')
+})
+
+test('maxDocumentBytes applies to reading a manifest from both sides too', (t) => {
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const recorded = record(directory)
+  assert.equal(recorded.status, 0)
+  const size = statSync(recorded.manifestPath).size
+
+  const exact = runJson([
+    'verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet', '--max-document-bytes', String(size),
+  ])
+  assert.equal(exact.status, 0, 'a manifest sitting exactly on the limit is read')
+  assert.deepEqual(ruleIds(exact.report), ['verification-complete'])
+
+  const over = runJson([
+    'verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet',
+    '--max-document-bytes', String(size - 1),
+  ])
+  assert.equal(over.status, 2)
+  assert.deepEqual(ruleIds(over.report), ['manifest-unreadable'])
+  assert.match(over.report.findings[0].message, new RegExp(`is ${size} bytes, over the document limit of ${size - 1}`))
+})
+
+test('maxDocumentBytes bounds what record WRITES, not only what it reads', (t) => {
+  // A manifest is larger than the run description it came from -- it carries a
+  // digest and a byte count per entry -- so every documented per-run bound can
+  // be satisfied and still produce a manifest over the document limit. Written,
+  // it would be refused by this tool's own verify and compare for ever after.
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const reference = record(directory, { out: 'reference.json' })
+  assert.equal(reference.status, 0)
+  const size = statSync(reference.manifestPath).size
+
+  const exact = record(directory, { out: 'exact.json', args: ['--max-document-bytes', String(size)] })
+  assert.equal(exact.status, 0, 'a manifest sitting exactly on the limit is legal and is written')
+  assert.deepEqual(ruleIds(exact.report), ['manifest-recorded'])
+  assert.equal(statSync(exact.manifestPath).size, size)
+
+  const over = record(directory, { out: 'over.json', args: ['--max-document-bytes', String(size - 1)] })
+  assert.equal(over.status, 2)
+  assert.equal(over.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(over.report), ['manifest-too-large'])
+  assert.match(
+    over.report.findings[0].message,
+    new RegExp(`would be ${size} bytes, over the document limit of ${size - 1}`),
+  )
+  assert.equal(existsSync(over.manifestPath), false, 'a manifest it could not read back is not written')
+  assert.ok(!ruleIds(over.report).includes('manifest-recorded'), 'nothing claims a manifest was recorded')
+
+  // The point of the bound: what record writes, its own readers can read.
+  const verified = runJson([
+    'verify', '--root', directory, '--manifest', exact.manifestPath, '--quiet', '--max-document-bytes', String(size),
+  ])
+  assert.equal(verified.status, 0)
+  assert.deepEqual(ruleIds(verified.report), ['verification-complete'])
 })
 
 test('maxFileBytes: a file of exactly the limit is hashed, one byte over is not', (t) => {

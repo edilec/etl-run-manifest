@@ -30,6 +30,10 @@ Renaming a `ruleId` is a breaking change and is recorded here.
   `compare` indexes by those keys, and an index silently keeps one entry per
   key, so a repeat would have been compared on one entry and reported as
   agreeing about both.
+- `maxDocumentBytes` bounds the manifest `record` writes as well as the
+  documents it reads, so a run description inside every other bound cannot
+  produce a manifest this tool's own `verify` and `compare` would refuse. The
+  manifest is not written and `manifest-too-large` names the size and the limit.
 - Declared bounds on document bytes, file bytes, inputs, outputs, code files,
   parameters, secret references, parent run ids, findings, identifier length,
   path length and value length, enforced before the work.

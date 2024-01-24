@@ -23,7 +23,6 @@ import {
   LIMITS,
   OVERRIDABLE,
   assertWritableDestination,
-  canonicalDocument,
   compareManifests,
   exitCodeFor,
   formatReport,
@@ -96,7 +95,10 @@ Options:
                       symbolically linked parent directory is followed, exactly
                       as it is for cp and shell redirection.
   --quiet             Do not write the human summary to stderr.
-  --max-document-bytes N   Bytes of one JSON document (default ${LIMITS.maxDocumentBytes}).
+  --max-document-bytes N   Bytes of one JSON document, read OR written
+                           (default ${LIMITS.maxDocumentBytes}). A manifest that would be over
+                           this is not written, because verify and compare
+                           read a manifest under the same bound.
   --max-file-bytes N       Bytes of one hashed file (default ${LIMITS.maxFileBytes}).
   --max-inputs N           Inputs per run (default ${LIMITS.maxInputs}).
   --max-outputs N          Outputs per run (default ${LIMITS.maxOutputs}).
@@ -195,7 +197,7 @@ async function main() {
       // as a digest mismatch. An unusable destination is the configuration
       // shape: empty stdout, a message, exit 2.
       try {
-        await writeFile(target, canonicalDocument(result.manifest), 'utf8')
+        await writeFile(target, result.document, 'utf8')
       } catch (error) {
         throw new DestinationError(`--out could not be written (${error.code ?? 'unknown error'})`)
       }

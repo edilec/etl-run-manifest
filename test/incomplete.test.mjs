@@ -174,6 +174,18 @@ test('finding-limit-reached when every dropped finding is an error: truncation a
   assertIncomplete(verified, 'finding-limit-reached', { errorsExpected: true })
 })
 
+test('manifest-too-large', (t) => {
+  // The scenario itself is in test/limits.test.mjs, where the bound is driven
+  // from both sides; this is the exit code for the rule.
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const reference = record(directory, { out: 'reference.json' })
+  const size = readFileSync(reference.manifestPath, 'utf8').length
+  const over = record(directory, { out: 'over.json', args: ['--max-document-bytes', String(size - 1)] })
+  assertIncomplete(over, 'manifest-too-large', { errorsExpected: true })
+})
+
 test('manifest-unreadable', (t) => {
   const directory = temporary(t)
   tree(directory)
@@ -222,7 +234,7 @@ test('evidence-unresolved (warning only: the flag is the whole guard)', (t) => {
 test('every rule in INCOMPLETE_RULES has a scenario above', () => {
   assert.deepEqual([...INCOMPLETE_RULES].sort(), [
     'digest-unresolved', 'evidence-unresolved', 'file-too-large', 'file-unreadable', 'finding-limit-reached',
-    'manifest-invalid', 'manifest-unreadable', 'no-evidence-recorded', 'path-outside-root',
+    'manifest-invalid', 'manifest-too-large', 'manifest-unreadable', 'no-evidence-recorded', 'path-outside-root',
     'run-description-invalid', 'run-description-unreadable',
   ])
 })

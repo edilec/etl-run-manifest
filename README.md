@@ -169,6 +169,7 @@ it does the opposite instead:
 | `manifest-integrity-mismatch` | error | the manifest does not match the integrity digest it carries |
 | `manifest-invalid` | error | the manifest does not match the manifest schema |
 | `manifest-recorded` | info | a manifest was written; the message carries its integrity digest |
+| `manifest-too-large` | error | the manifest record built would be over `maxDocumentBytes`, so it was not written |
 | `manifest-unreadable` | error | the manifest could not be read, decoded or parsed |
 | `no-evidence-recorded` | error | there is no input, output or code file to record, verify or compare |
 | `output-digest-mismatch` | error | a recorded output now hashes to something else |
@@ -225,6 +226,16 @@ truncation and never a pass.
 | `maxIdentifierChars` | 200 | (not overridable) |
 | `maxPathChars` | 1024 | (not overridable) |
 | `maxValueChars` | 512 | (not overridable) |
+
+`maxDocumentBytes` bounds the manifest `record` **writes** as well as the
+documents it reads. A manifest carries a digest and a byte count per entry, so
+it is larger than the run description it came from, and the per-run counts
+above can all be satisfied by a description whose manifest would be over the
+document limit. Such a manifest would be written once and refused by this
+tool's own `verify` and `compare` for ever after, so it is not written:
+`manifest-too-large` names the size and the limit, and the run exits `2`. Raise
+`--max-document-bytes` for the recording and for every later read, or record
+fewer files in one run.
 
 ## Determinism
 

@@ -14,7 +14,7 @@
 
 import { MANIFEST_SCHEMA, compileRunDescription } from './schema.mjs'
 import { byCodeUnit } from './text.mjs'
-import { canonicalJson } from './canonical.mjs'
+import { canonicalDocument, canonicalJson } from './canonical.mjs'
 import { DIGEST_ALGORITHM, digestText, hashFile, readJsonDocument } from './files.mjs'
 import { LIMITS } from './limits.mjs'
 import { ReportBuilder, TOOL_ID } from './report.mjs'
@@ -86,7 +86,7 @@ export async function recordRun({ runPath, realRoot, limits = LIMITS }) {
       file: RUN_LABEL,
       message: `the run description ${document.detail}`,
     })
-    return { report: report.finish({ checked: 0, recorded: 0, unresolved: 0 }), manifest: null, document: null }
+    return { report: report.finish({ checked: 0, recorded: 0, unresolved: 0 }), manifest: null, document: null, touched: [] }
   }
   const compiled = compileRunDescription(document.value, limits)
   if (!compiled.ok) {
@@ -97,7 +97,7 @@ export async function recordRun({ runPath, realRoot, limits = LIMITS }) {
         message: `${problem.pointer === '' ? 'the document' : problem.pointer} ${problem.message}`,
       })
     }
-    return { report: report.finish({ checked: 0, recorded: 0, unresolved: 0 }), manifest: null, document: null }
+    return { report: report.finish({ checked: 0, recorded: 0, unresolved: 0 }), manifest: null, document: null, touched: [] }
   }
 
   const run = compiled.run
@@ -132,6 +132,38 @@ export async function recordRun({ runPath, realRoot, limits = LIMITS }) {
     },
   }
   const manifest = { ...body, integrity: { algorithm: DIGEST_ALGORITHM, digest: digestText(canonicalJson(body)) } }
+  const touched = [...code.touched, ...inputs.touched, ...outputs.touched]
+
+  // Bound the artefact, not only the inputs. Every documented per-run bound can
+  // be respected -- 512 inputs, 256 outputs, 128 code files, ids and paths
+  // inside their character limits -- and still produce a manifest larger than
+  // the document limit that `verify` and `compare` read manifests under. Such a
+  // manifest is written once and refused for ever after, which is the opposite
+  // of a record worth having, so it is not written at all and the limit is
+  // named. The bound is the same `maxDocumentBytes` both readers apply, so what
+  // this writes is by construction something it can read back.
+  const manifestDocument = canonicalDocument(manifest)
+  const documentBytes = Buffer.byteLength(manifestDocument, 'utf8')
+  if (documentBytes > limits.maxDocumentBytes) {
+    report.add('manifest-too-large', {
+      file: MANIFEST_LABEL,
+      pointer: '/run',
+      message:
+        `the manifest for run "${run.runId}" would be ${documentBytes} bytes, over the document limit of `
+        + `${limits.maxDocumentBytes} that verify and compare read a manifest under, so it was not written`,
+      suggestion: 'record fewer files in one run, or raise --max-document-bytes for this run and every later read',
+    })
+    return {
+      report: report.finish({
+        checked,
+        recorded: code.resolved + inputs.resolved + outputs.resolved,
+        unresolved: code.unresolved + inputs.unresolved + outputs.unresolved,
+      }),
+      manifest: null,
+      document: null,
+      touched,
+    }
+  }
 
   report.add('manifest-recorded', {
     file: MANIFEST_LABEL,
@@ -150,6 +182,7 @@ export async function recordRun({ runPath, realRoot, limits = LIMITS }) {
       unresolved: code.unresolved + inputs.unresolved + outputs.unresolved,
     }),
     manifest,
-    touched: [...code.touched, ...inputs.touched, ...outputs.touched],
+    document: manifestDocument,
+    touched,
   }
 }
