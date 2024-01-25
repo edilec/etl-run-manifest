@@ -205,6 +205,40 @@ test('manifest-invalid', (t) => {
   assertIncomplete(verified, 'manifest-invalid', { errorsExpected: true })
 })
 
+test('manifest-invalid: a required key is refused even where its absence would be legal', (t) => {
+  // `seed` may be null, and a missing key would read as null everywhere
+  // downstream, so the required-key check is the only thing that refuses a
+  // manifest without it. Every other required key is also type-checked further
+  // down, which is what made deleting that check invisible.
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const recorded = record(directory)
+  reseal(recorded.manifestPath, (manifest) => { delete manifest.run.seed })
+
+  const verified = runJson(['verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet'])
+  assertIncomplete(verified, 'manifest-invalid', { errorsExpected: true })
+  assert.deepEqual(ruleIds(verified.report), ['manifest-invalid'])
+  assert.equal(verified.report.findings[0].location.pointer, '/run/seed')
+  assert.match(verified.report.findings[0].message, /is required and is missing/)
+})
+
+test('manifest-invalid: a document naming another tool is refused', (t) => {
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const recorded = record(directory)
+  // Re-sealed, so the integrity digest over the edited document is correct and
+  // the tool field is the only thing wrong with it.
+  reseal(recorded.manifestPath, (manifest) => { manifest.tool = 'some-other-tool' })
+
+  const verified = runJson(['verify', '--root', directory, '--manifest', recorded.manifestPath, '--quiet'])
+  assertIncomplete(verified, 'manifest-invalid', { errorsExpected: true })
+  assert.deepEqual(ruleIds(verified.report), ['manifest-invalid'])
+  assert.equal(verified.report.findings[0].location.pointer, '/tool')
+  assert.match(verified.report.findings[0].message, /must be "etl-run-manifest"/)
+})
+
 test('digest-unresolved (warning only: the flag is the whole guard)', (t) => {
   const directory = temporary(t)
   tree(directory)
