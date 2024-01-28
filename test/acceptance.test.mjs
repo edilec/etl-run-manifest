@@ -142,6 +142,89 @@ test('differing inputs are reported as differing inputs, never as nondeterminism
   )
 })
 
+/** Two complete runs whose descriptions differ only in what the caller overrides. */
+function comparedRuns(t, overrideA, overrideB) {
+  const directory = temporary(t)
+  const a = join(directory, 'a')
+  const b = join(directory, 'b')
+  tree(a)
+  tree(b)
+  writeRun(a, runDescription({ runId: 'run-a', ...overrideA }))
+  writeRun(b, runDescription({ runId: 'run-b', ...overrideB }))
+  const first = record(a)
+  const second = record(b)
+  assert.equal(first.status, 0)
+  assert.equal(second.status, 0)
+  return runJson(['compare', '--baseline', first.manifestPath, '--candidate', second.manifestPath, '--quiet'])
+}
+
+const CODE = [{ path: 'sql/t.sql' }]
+
+test('compare says WHICH transformation differs, rather than only withholding the verdict', (t) => {
+  // Without the finding the run is exit 0 with an empty findings list: the
+  // verdict is withheld, and nothing tells the consumer why.
+  const byId = comparedRuns(t, {}, { transformation: { id: 'normalise-v2', version: '1.0.0', code: CODE } })
+  assert.equal(byId.status, 1)
+  assert.equal(byId.report.status, 'fail')
+  assert.deepEqual(ruleIds(byId.report), ['transformation-differs'])
+  assert.equal(byId.report.findings[0].location.pointer, '/run/transformation/id')
+  assert.equal(byId.report.findings[0].message, 'the baseline ran "normalise" and the candidate ran "normalise-v2"')
+  assert.ok(!ruleIds(byId.report).includes('runs-reproduced'))
+
+  const byVersion = comparedRuns(t, {}, { transformation: { id: 'normalise', version: '2.0.0', code: CODE } })
+  assert.equal(byVersion.status, 1)
+  assert.deepEqual(ruleIds(byVersion.report), ['transformation-differs'])
+  assert.equal(byVersion.report.findings[0].location.pointer, '/run/transformation/version')
+  assert.equal(
+    byVersion.report.findings[0].message,
+    'the baseline ran version "1.0.0" and the candidate ran version "2.0.0"',
+  )
+})
+
+test('compare says WHICH parameter differs, and on which side', (t) => {
+  const extra = comparedRuns(t, {}, {
+    parameters: [{ name: 'batch_size', value: 500 }, { name: 'currency', value: 'EUR' }],
+  })
+  assert.equal(extra.status, 1)
+  assert.equal(extra.report.status, 'fail')
+  assert.deepEqual(ruleIds(extra.report), ['parameters-differ'])
+  assert.equal(extra.report.findings[0].location.file, '(candidate)')
+  assert.equal(extra.report.findings[0].location.pointer, '/run/parameters/currency')
+  assert.equal(extra.report.findings[0].message, 'the parameter "currency" is recorded by the candidate only')
+  assert.ok(!ruleIds(extra.report).includes('runs-reproduced'))
+
+  const changed = comparedRuns(t, {}, { parameters: [{ name: 'batch_size', value: 250 }] })
+  assert.equal(changed.status, 1)
+  assert.deepEqual(ruleIds(changed.report), ['parameters-differ'])
+  assert.equal(
+    changed.report.findings[0].message,
+    'the parameter "batch_size" was 500 in the baseline and 250 in the candidate',
+  )
+})
+
+test('differently named credentials are reported as lineage and do NOT withhold the verdict', (t) => {
+  // Documented deliberately: a manifest pins the bytes of every input, so a run
+  // that read the same bytes under a different credential name read the same
+  // data. The difference is recorded, at info severity, and the comparison
+  // still passes.
+  const compared = comparedRuns(t, {}, { secretRefs: [{ name: 'WAREHOUSE_WRITER', source: 'vault' }] })
+  assert.equal(compared.status, 0)
+  assert.equal(compared.report.status, 'pass')
+  assert.deepEqual(ruleIds(compared.report).sort(), ['runs-reproduced', 'secret-refs-differ'])
+  const finding = compared.report.findings.find((entry) => entry.ruleId === 'secret-refs-differ')
+  assert.equal(finding.severity, 'info')
+  assert.equal(finding.location.pointer, '/run/secretRefs')
+  assert.match(finding.message, /baseline: WAREHOUSE_READER@env; candidate: WAREHOUSE_WRITER@vault/)
+  assert.match(finding.message, /does not enter the determinism verdict/)
+})
+
+test('a run naming no credential at all is compared against one that does', (t) => {
+  const compared = comparedRuns(t, {}, { secretRefs: [] })
+  assert.equal(compared.status, 0)
+  const finding = compared.report.findings.find((entry) => entry.ruleId === 'secret-refs-differ')
+  assert.match(finding.message, /baseline: WAREHOUSE_READER@env; candidate: none/)
+})
+
 test('ACCEPTANCE: the run description has no field for a credential value, so one cannot be recorded', (t) => {
   const directory = temporary(t)
   tree(directory)
