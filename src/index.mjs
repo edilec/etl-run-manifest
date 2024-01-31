@@ -11,8 +11,6 @@
  * somebody produced.
  */
 
-export const TOOL_ID = 'etl-run-manifest'
-
 export { LIMITS, OVERRIDABLE } from './limits.mjs'
 export { MAX_DEPTH, canonicalDocument, canonicalJson } from './canonical.mjs'
 export { DIGEST_ALGORITHM, digestText, hashFile, readJsonDocument, resolveRoot } from './files.mjs'
@@ -21,7 +19,7 @@ export { BASELINE_LABEL, CANDIDATE_LABEL, compareManifests } from './compare.mjs
 export { MANIFEST_LABEL, RUN_LABEL, declaredPaths, recordRun } from './record.mjs'
 export { verifyManifest } from './verify.mjs'
 export { INCOMPLETE_RULES, RULE_SEVERITY, marksIncomplete, severityOf } from './rules.mjs'
-export { ReportBuilder, SCHEMA_VERSION, exitCodeFor, formatReport, serializeReport } from './report.mjs'
+export { ReportBuilder, SCHEMA_VERSION, TOOL_ID, exitCodeFor, formatReport, serializeReport } from './report.mjs'
 export {
   DIGEST_ALGORITHM as SCHEMA_DIGEST_ALGORITHM,
   MANIFEST_SCHEMA,

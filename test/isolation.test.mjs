@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { TOOL_ID } from '../src/index.mjs'
 import { ROOT, record, runCli, runDescription, temporary, tree, writeRun } from './support.mjs'
 
 function sources() {
@@ -94,8 +95,29 @@ test('the package declares no dependencies of any kind', () => {
   assert.equal(manifest.optionalDependencies, undefined)
 })
 
-test('TOOL_ID is exported and equals the directory name', () => {
-  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-  assert.equal(manifest.name, 'etl-run-manifest')
-  assert.equal(ROOT.split('/').pop(), 'etl-run-manifest')
+test('TOOL_ID is what the package is called, what the report says, and what the manifest carries', (t) => {
+  // This test used to compare the CHECKOUT DIRECTORY name against a literal
+  // and never look at TOOL_ID at all, so renaming the exported constant was
+  // invisible. It is checked here through the three places it is observable
+  // instead. The directory assertion is gone on purpose: a checkout may sit in
+  // any directory, and asserting otherwise fails every copy of this tree that
+  // is named something else -- which silently turns every mutant in such a
+  // sandbox into a false catch and inflates a mutation sweep to 100%.
+  const packaged = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(TOOL_ID, 'etl-run-manifest')
+  assert.equal(packaged.name, TOOL_ID)
+  assert.equal(Object.keys(packaged.bin)[0], TOOL_ID)
+
+  const directory = temporary(t)
+  tree(directory)
+  writeRun(directory)
+  const recorded = record(directory)
+  assert.equal(recorded.status, 0)
+  assert.equal(recorded.report.tool, TOOL_ID, 'the report envelope names the tool')
+  const manifest = JSON.parse(readFileSync(recorded.manifestPath, 'utf8'))
+  assert.equal(manifest.tool, TOOL_ID, 'the manifest carries the tool that wrote it')
+
+  const verified = runCli(['verify', '--root', directory, '--manifest', recorded.manifestPath])
+  assert.equal(verified.status, 0)
+  assert.match(verified.stderr, new RegExp(`^${TOOL_ID}: `), 'the human summary is prefixed with it')
 })
