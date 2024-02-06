@@ -13,11 +13,13 @@
  * not. The test is what finds it, not the review.
  */
 
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { UNPARSEABLE, parseFailureDetail } from '../src/parse-failure.mjs'
-import { record, runDescription, runJson, temporary, tree, write, writeRun } from './support.mjs'
+import { record, ruleIds, runDescription, runJson, temporary, tree, write, writeRun } from './support.mjs'
 
 function failureFor(document) {
   try {
@@ -104,4 +106,48 @@ test('the CLI reports an unparseable manifest without echoing it', (t) => {
   assert.deepEqual(verified.report.findings.map((finding) => finding.ruleId), ['manifest-unreadable'])
   assert.match(verified.report.findings[0].message, /at the start of the document/)
   assert.ok(!verified.report.findings[0].message.includes('at position 1'))
+})
+
+/**
+ * Bytes that are not UTF-8 are refused by the DECODER, not inferred afterwards.
+ *
+ * `fatal: true` is the guard. Decoding leniently turns an undecodable byte into
+ * U+FFFD, and U+FFFD is a character a document may legally contain -- so the
+ * document then parses, the replacement character travels into an identifier,
+ * and a manifest is recorded for a run description nobody could read. The
+ * decoder decides; the decoded text never gets a vote.
+ */
+function withInvalidUtf8(directory, name) {
+  const description = runDescription({ runId: 'run-REPLACE-ME' })
+  const text = `${JSON.stringify(description, null, 2)}\n`
+  const bytes = Buffer.from(text, 'utf8')
+  const index = bytes.indexOf(Buffer.from('REPLACE-ME', 'utf8'))
+  bytes[index] = 0xff
+  const target = join(directory, name)
+  writeFileSync(target, bytes)
+  return target
+}
+
+test('a run description that is not valid UTF-8 is refused, and nothing is recorded', (t) => {
+  const directory = temporary(t)
+  tree(directory)
+  withInvalidUtf8(directory, 'run.json')
+
+  const recorded = record(directory)
+  assert.equal(recorded.status, 2)
+  assert.equal(recorded.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(recorded.report), ['run-description-unreadable'])
+  assert.equal(recorded.report.findings[0].message, 'the run description is not valid UTF-8')
+  assert.equal(recorded.report.summary.checked, 0)
+  assert.ok(!recorded.stdout.includes('\uFFFD'), 'no replacement character reaches the report')
+})
+
+test('a manifest that is not valid UTF-8 is refused the same way', (t) => {
+  const directory = temporary(t)
+  tree(directory)
+  const broken = withInvalidUtf8(directory, 'broken-manifest.json')
+  const verified = runJson(['verify', '--root', directory, '--manifest', broken, '--quiet'])
+  assert.equal(verified.status, 2)
+  assert.deepEqual(ruleIds(verified.report), ['manifest-unreadable'])
+  assert.equal(verified.report.findings[0].message, 'the manifest is not valid UTF-8')
 })

@@ -552,6 +552,40 @@ test('an unresolved input withholds the nondeterminism verdict even when the out
   )
 })
 
+test('an unresolved OUTPUT withholds the reproduced verdict, exactly as an input does', (t) => {
+  // The verdict rests on three things being KNOWN: the code and inputs, and the
+  // outputs. An output pair with no digest on either side is not a matching
+  // output -- it is no evidence about the outputs at all -- so "these two runs
+  // reproduced" cannot be said, however completely the inputs agree.
+  const directory = temporary(t)
+  const a = join(directory, 'a')
+  const b = join(directory, 'b')
+  tree(a)
+  tree(b)
+  const description = (runId) => runDescription({
+    runId,
+    outputs: [{ id: 'orders', path: 'out/orders.tsv' }, { id: 'ledger', path: 'out/ledger.tsv' }],
+  })
+  writeRun(a, description('run-a'))
+  writeRun(b, description('run-b'))
+  const first = record(a)
+  const second = record(b)
+  assert.equal(first.status, 2, 'the second output does not exist, so its digest is unresolved')
+  assert.equal(second.status, 2)
+
+  const compared = runJson(['compare', '--baseline', first.manifestPath, '--candidate', second.manifestPath, '--quiet'])
+  assert.equal(compared.status, 2)
+  assert.equal(compared.report.status, 'incomplete')
+  assert.deepEqual(ruleIds(compared.report), ['evidence-unresolved'])
+  assert.equal(compared.report.findings[0].location.pointer, '/run/outputs/ledger')
+  assert.equal(compared.report.summary.unresolved, 1)
+  assert.equal(compared.report.summary.differing, 0, 'every other file matched on both sides')
+  assert.ok(
+    !ruleIds(compared.report).includes('runs-reproduced'),
+    'an output nobody could hash is not an output that matched',
+  )
+})
+
 test('verifying an entry the manifest never hashed is not a verification', (t) => {
   const directory = temporary(t)
   tree(directory)
