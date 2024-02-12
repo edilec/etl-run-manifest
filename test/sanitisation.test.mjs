@@ -98,8 +98,14 @@ test('renderable() answers about the RENDERED form, which trim() does not', () =
 })
 
 test('sanitise() refuses a non-string rather than calling String() on it', () => {
-  assert.throws(() => sanitise({ toString: {} }), TypeError)
-  assert.throws(() => sanitise(null), TypeError)
+  // The message matters as much as the type. Without the check both of these
+  // still throw a TypeError -- from `value.replace` not being a function -- so
+  // an assertion on the type alone passes for a reason it was not written to
+  // check, and the boundary that is supposed to refuse a bad value has quietly
+  // become a boundary that trips over it.
+  assert.throws(() => sanitise({ toString: {} }), { name: 'TypeError', message: 'sanitise() takes a string' })
+  assert.throws(() => sanitise(null), { name: 'TypeError', message: 'sanitise() takes a string' })
+  assert.throws(() => sanitise(42), { name: 'TypeError', message: 'sanitise() takes a string' })
 })
 
 test('no output character from a full run falls in the control class', (t) => {

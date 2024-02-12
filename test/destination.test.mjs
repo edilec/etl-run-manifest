@@ -201,6 +201,23 @@ test('a destination that exists but cannot be written is exit 2, not a stack tra
   assert.equal(readFileSync(out, 'utf8'), 'an older manifest\n', 'the destination is left as it was')
 })
 
+test('a destination that cannot even be inspected is refused, and says so', (t) => {
+  // lstat is the first thing the guard does, and it can fail for a reason that
+  // is not "no such file": a parent directory nobody may search. Without its
+  // own refusal the run falls through to the "directory does not exist" branch,
+  // which is a different and untrue statement about the destination.
+  if (asRoot) return t.skip('mode bits do not refuse root')
+  const { directory, root } = prepared(t)
+  const sealed = join(directory, 'sealed')
+  mkdirSync(sealed)
+  chmodSync(sealed, 0o000)
+  const result = attemptWrite(root, join(sealed, 'manifest.json'))
+  chmodSync(sealed, 0o755)
+  assert.equal(result.status, 2)
+  assert.equal(result.stdout, '')
+  assert.equal(result.stderr, 'etl-run-manifest: --out could not be inspected: EACCES\n')
+})
+
 test('a destination in a directory that cannot be written is exit 2 as well', (t) => {
   if (asRoot) return t.skip('mode bits do not refuse root')
   const { directory, root } = prepared(t)

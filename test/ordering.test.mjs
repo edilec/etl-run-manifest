@@ -17,7 +17,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { byCodeUnit } from '../src/index.mjs'
-import { record, runJson, runDescription, temporary, tree, writeRun } from './support.mjs'
+import { record, ruleIds, runJson, runDescription, temporary, tree, writeRun } from './support.mjs'
 
 const NAMES = ['a_b.csv', 'Z.csv', 'assets.csv', 'a-b.csv', 'README', 'a.csv']
 // Code unit: R(0x52) Z(0x5A) then a followed by -(0x2D) .(0x2E) _(0x5F) s(0x73).
@@ -59,6 +59,50 @@ test('compare orders its pairs by code unit too', (t) => {
   assert.deepEqual(
     pointers.filter((name) => NAMES.includes(name)),
     BY_CODE_UNIT,
+  )
+})
+
+test('WHICH findings survive truncation is decided by code-unit order too', (t) => {
+  // The report sorts what it emits, so the order pairs are COMPARED in is
+  // invisible -- until a bound bites. Then the order decides which findings
+  // exist at all, and a collator would make that machine-dependent: the
+  // consumer of a truncated report would get different findings on two correct
+  // machines.
+  const directory = temporary(t)
+  const a = join(directory, 'a')
+  const b = join(directory, 'b')
+  tree(a)
+  tree(b)
+  writeRun(a, runDescription({ runId: 'run-a', inputs: NAMES.map((name) => ({ id: name, path: 'data/orders.csv' })) }))
+  writeRun(b, runDescription({ runId: 'run-b' }))
+  const compared = runJson([
+    'compare', '--baseline', record(a).manifestPath, '--candidate', record(b).manifestPath, '--quiet',
+    '--max-findings', '3',
+  ])
+  assert.equal(compared.status, 2, 'a truncated report is incomplete')
+  const reported = compared.report.findings
+    .filter((finding) => finding.ruleId === 'inputs-differ')
+    .map((finding) => finding.location.pointer.replace('/run/inputs/', ''))
+  assert.deepEqual(reported, BY_CODE_UNIT.slice(0, 3))
+  assert.ok(ruleIds(compared.report).includes('finding-limit-reached'))
+})
+
+test('the credential list in a finding is rendered in code-unit order', (t) => {
+  const directory = temporary(t)
+  const a = join(directory, 'a')
+  const b = join(directory, 'b')
+  tree(a)
+  tree(b)
+  writeRun(a, runDescription({ runId: 'run-a', secretRefs: NAMES.map((name) => ({ name, source: 'env' })) }))
+  writeRun(b, runDescription({ runId: 'run-b', secretRefs: [] }))
+  const compared = runJson([
+    'compare', '--baseline', record(a).manifestPath, '--candidate', record(b).manifestPath, '--quiet',
+  ])
+  const finding = compared.report.findings.find((entry) => entry.ruleId === 'secret-refs-differ')
+  assert.ok(finding !== undefined)
+  assert.ok(
+    finding.message.startsWith(`the runs name different credentials (baseline: ${BY_CODE_UNIT.map((name) => `${name}@env`).join(', ')}; candidate: none)`),
+    finding.message,
   )
 })
 
