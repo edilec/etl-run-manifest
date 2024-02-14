@@ -17,7 +17,7 @@
  * confinement the code does not perform is worse than silence.
  */
 
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import test from 'node:test'
@@ -101,6 +101,52 @@ test('HOLE 3: the hard link is refused however far outside the root it sits', (t
   assert.equal(result.status, 2)
   assert.equal(result.stdout, '')
   assert.equal(readFileSync(join(root, 'out/orders.tsv'), 'utf8'), 'a\tb\n1\t2\n')
+})
+
+test('HOLE 4: a one-hop dangling named input cannot become a fresh manifest', (t) => {
+  const { directory, root } = prepared(t)
+  const input = join(root, 'data/orders.csv')
+  const out = join(directory, 'manifest-new.json')
+  unlinkSync(input)
+  symlinkSync('../../manifest-new.json', input)
+
+  const result = attemptWrite(root, out)
+  assert.equal(result.status, 2)
+  assert.equal(existsSync(out), false)
+  assert.equal(result.stdout, '')
+  assert.match(result.stderr, /names an input path/)
+  assert.throws(() => readFileSync(input), { code: 'ENOENT' })
+})
+
+test('HOLE 4: a two-hop dangling named input cannot become a fresh manifest', (t) => {
+  const { directory, root } = prepared(t)
+  const input = join(root, 'data/orders.csv')
+  const middle = join(root, 'middle.csv')
+  const out = join(directory, 'manifest-new.json')
+  unlinkSync(input)
+  symlinkSync('../middle.csv', input)
+  symlinkSync('../manifest-new.json', middle)
+
+  const result = attemptWrite(root, out)
+  assert.equal(result.status, 2)
+  assert.equal(existsSync(out), false)
+  assert.equal(result.stdout, '')
+  assert.match(result.stderr, /names an input path/)
+  assert.throws(() => readFileSync(input), { code: 'ENOENT' })
+})
+
+test('ALLOWED: a distinct missing named input still permits an incomplete manifest', (t) => {
+  const { directory, root } = prepared(t)
+  const input = join(root, 'data/orders.csv')
+  const out = join(directory, 'manifest-new.json')
+  unlinkSync(input)
+  symlinkSync('../../unrelated-missing.csv', input)
+
+  const result = attemptWrite(root, out)
+  assert.equal(result.status, 2)
+  assert.equal(JSON.parse(result.stdout).status, 'incomplete')
+  assert.match(readFileSync(out, 'utf8'), /"edilec\.etl-manifest\/v1"/)
+  assert.throws(() => readFileSync(input), { code: 'ENOENT' })
 })
 
 test('a destination that is a directory is refused', (t) => {

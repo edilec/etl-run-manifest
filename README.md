@@ -259,6 +259,10 @@ that differs between Node builds, which would let two correct machines disagree.
 - a **hard link to any file this run resolved** — including a file it stat-ed and
   then skipped, and the run description itself — is refused, because `dev` plus
   `ino` is the only thing that sees it;
+- a **dangling named input symlink** whose final target is a new `--out` path is
+  refused, including through an intermediate symlink. Otherwise writing the
+  manifest would make previously unreadable input resolve to the report bytes.
+  A distinct missing input remains reportable as incomplete evidence;
 - the destination directory must already exist; this tool never creates one.
 
 A refused destination is a configuration error: exit `2` with empty stdout.
